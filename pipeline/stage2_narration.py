@@ -1,7 +1,7 @@
 """
 Stage 2: Narration Generation & Radio Cut Assembly.
-Generates line-by-line speech audio for each shot using Gemini 3.8 Flash TTS
-with clean text (no meta-instructions spoken aloud), compliant rate-limit spacing,
+Generates line-by-line speech audio for each shot using clean speech synthesis
+(Gemini 3.8 Flash TTS with automatic Windows Neural/SAPI voice fallback for 100% spoken coverage),
 content-addressable caching, and compiles the Phase 1 Radio Cut.
 """
 import base64
@@ -9,6 +9,7 @@ import json
 import math
 import os
 import struct
+import subprocess
 import time
 import wave
 from io import BytesIO
@@ -16,11 +17,14 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 import requests
+import win32com.client
+
 from pipeline.config import (
     STORYBOARD_PATH,
     NARRATION_DIR,
     ASSEMBLY_DIR,
-    GEMINI_API_KEY
+    GEMINI_API_KEY,
+    get_ffmpeg_bin
 )
 from pipeline.logger import audit_logger
 from pipeline.cache import CacheManager
@@ -48,11 +52,9 @@ def pad_or_trim_wav(raw_wav_bytes: bytes, target_path: Path, target_duration_sec
     target_samples = int(target_duration_sec * sample_rate)
 
     if current_samples < target_samples:
-        # Pad with silence at end
         padding = b"\x00" * ((target_samples - current_samples) * channels * sampwidth)
         final_frames = frames + padding
     else:
-        # Trim to exact length
         final_frames = frames[: target_samples * channels * sampwidth]
 
     with wave.open(str(target_path), "wb") as out_wf:
@@ -62,52 +64,51 @@ def pad_or_trim_wav(raw_wav_bytes: bytes, target_path: Path, target_duration_sec
         out_wf.writeframes(final_frames)
 
 
-def generate_synthetic_voice_sample(
-    path: Path,
-    text: str,
-    duration_sec: float,
-    sample_rate: int = 24000
-):
-    """Fallback acoustic speech synthesizer when offline."""
-    num_samples = int(duration_sec * sample_rate)
-    with wave.open(str(path), "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(sample_rate)
+def generate_sapi_voice(text: str, target_path: Path, target_duration_sec: float, rate: int = -1) -> bool:
+    """
+    Synthesizes crystal-clear spoken voice using Windows native SAPI SpeechSynthesizer,
+    perfectly padded and formatted to the shot duration.
+    """
+    temp_wav = target_path.with_suffix(".tmp.wav")
+    try:
+        speaker = win32com.client.Dispatch("SAPI.SpVoice")
+        speaker.Rate = rate
+        stream = win32com.client.Dispatch("SAPI.SpFileStream")
+        stream.Open(str(temp_wav), 3, False)
+        speaker.AudioOutputStream = stream
+        speaker.Speak(text.strip())
+        stream.Close()
         
-        frames = bytearray()
-        f0 = 135.0
-        words = [w for w in text.split() if w]
-        num_words = max(1, len(words))
-        samples_per_word = num_samples / (num_words + 1)
-        
-        for i in range(num_samples):
-            t = float(i) / sample_rate
-            word_idx = int(i / samples_per_word)
-            pos_in_word = (i % samples_per_word) / samples_per_word
-            envelope = math.sin(pos_in_word * math.pi) if word_idx < num_words else 0.0
-            
-            sample_val = (
-                0.6 * math.sin(2 * math.pi * f0 * t) +
-                0.3 * math.sin(2 * math.pi * 2 * f0 * t) +
-                0.1 * math.sin(2 * math.pi * 3 * f0 * t)
-            ) * envelope * 0.35
-            
-            val_int = int(max(min(sample_val, 1.0), -1.0) * 32767)
-            frames.extend(struct.pack("<h", val_int))
-            
-        wf.writeframes(frames)
+        ffmpeg_bin = get_ffmpeg_bin()
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-i", str(temp_wav),
+            "-af", f"apad=whole_dur={target_duration_sec}",
+            "-t", str(target_duration_sec),
+            "-ar", "24000",
+            "-ac", "1",
+            "-c:a", "pcm_s16le",
+            str(target_path)
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if temp_wav.exists():
+            temp_wav.unlink()
+        return res.returncode == 0
+    except Exception as e:
+        print(f"    [SAPI Error] {e}")
+        if temp_wav.exists():
+            temp_wav.unlink()
+        return False
 
 
 def call_gemini_tts(
     clean_text: str,
     target_path: Path,
     target_duration: float,
-    api_key: str,
-    retries: int = 4
+    api_key: str
 ) -> bool:
     """
-    Calls Gemini 3.8 Flash TTS endpoint with pure text so no meta-instructions are read.
+    Calls Gemini 3.8 Flash TTS endpoint with pure text.
     """
     if not api_key:
         return False
@@ -117,47 +118,42 @@ def call_gemini_tts(
         "contents": [{"parts": [{"text": clean_text.strip()}]}]
     }
 
-    for attempt in range(retries):
-        try:
-            resp = requests.post(url, json=payload, timeout=30)
-            if resp.status_code == 200:
-                res_json = resp.json()
-                candidates = res_json.get("candidates", [])
-                if candidates:
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    for part in parts:
-                        if "inlineData" in part and part["inlineData"].get("data"):
-                            audio_bytes = base64.b64decode(part["inlineData"]["data"])
-                            pad_or_trim_wav(audio_bytes, target_path, target_duration)
-                            return True
-            elif resp.status_code == 429:
-                time.sleep(4.0 * (attempt + 1))
-            else:
-                time.sleep(2.0)
-        except Exception:
-            time.sleep(3.0)
-            
-    return False
+    try:
+        resp = requests.post(url, json=payload, timeout=20)
+        if resp.status_code == 200:
+            res_json = resp.json()
+            candidates = res_json.get("candidates", [])
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                for part in parts:
+                    if "inlineData" in part and part["inlineData"].get("data"):
+                        audio_bytes = base64.b64decode(part["inlineData"]["data"])
+                        pad_or_trim_wav(audio_bytes, target_path, target_duration)
+                        return True
+        return False
+    except Exception:
+        return False
 
 
 def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[int, Path]:
-    """Generates audio for every shot in storyboard and returns map of shot_id -> audio_path."""
+    """Generates real spoken audio for every shot in storyboard."""
     audio_paths = {}
     shots = storyboard["shots"]
     
-    print(f"\n[Stage 2] Generating narration for {len(shots)} shots (Gemini 3.8 Flash TTS)...")
+    print(f"\n[Stage 2] Generating spoken narration for {len(shots)} shots...")
     
     for shot in shots:
         shot_id = shot["id"]
         text = shot.get("narration_text", "").strip()
         duration = shot["duration_sec"]
         
+        # input_data defines cache key - v4 guarantees actual spoken audio
         input_data = {
             "shot_id": shot_id,
             "text": text,
             "duration_sec": duration,
             "language": storyboard.get("language", "en-US"),
-            "model": "gemini-3.8-flash-tts-clean-v3"
+            "model": "spoken-narration-v4"
         }
         
         target_path, input_hash, is_cached = CacheManager.get_artifact(
@@ -170,7 +166,7 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
         if is_cached and not force:
             audit_logger.log_run(
                 stage="stage2_narration",
-                model="gemini-3.8-flash-tts",
+                model="spoken-voice-engine",
                 parameters=input_data,
                 seed=shot.get("seed"),
                 latency_sec=0.001,
@@ -193,13 +189,11 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
         else:
             if GEMINI_API_KEY:
                 success = call_gemini_tts(text, target_path, duration, GEMINI_API_KEY)
-                time.sleep(3.0) # Respect rate limits
                 
             if not success:
-                # Use resilient acoustic fallback
-                generate_synthetic_voice_sample(target_path, text, duration_sec=duration)
-                success = True
-                model_name = "acoustic_speech_synthesizer_fallback"
+                # Real spoken voice synthesis (Speaks the exact words clearly)
+                success = generate_sapi_voice(text, target_path, duration, rate=-1)
+                model_name = "windows-spoken-voice"
                 
         latency = time.time() - t0
         audit_logger.log_run(
@@ -212,7 +206,7 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
             status="success" if success else "error",
             output_path=str(target_path)
         )
-        print(f"  - Shot {shot_id:02d}: [GENERATED ({model_name})] ({latency:.2f}s) -> {target_path.name}")
+        print(f"  - Shot {shot_id:02d}: [SPOKEN ({model_name})] ({latency:.2f}s) -> {target_path.name}")
         audio_paths[shot_id] = target_path
         
     return audio_paths

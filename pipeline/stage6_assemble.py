@@ -112,7 +112,7 @@ def mix_and_duck_audio(voice_path: Path, score_path: Path, output_path: Path) ->
         f"[0:a][1:a]sidechaincompress="
         f"threshold={DUCKING_THRESHOLD}:ratio={DUCKING_RATIO}:"
         f"attack={DUCKING_ATTACK_MS}:release={DUCKING_RELEASE_MS}[ducked_music];"
-        f"[ducked_music][1:a]amix=inputs=2:duration=longest:weights=1.0 1.2[mixed];"
+        f"[ducked_music][1:a]amix=inputs=2:duration=longest:weights=0.35 1.7[mixed];"
         f"[mixed]loudnorm=I={TARGET_LUFS}:LRA={LRA}:TP={TRUE_PEAK}[master_audio]"
     )
     
