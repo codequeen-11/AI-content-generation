@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StoryboardContract",
+  "description": "Validation schema for the Heritage Short Film pipeline storyboard",
+  "type": "object",
+  "required": [
+    "title",
+    "logline",
+    "language",
+    "subtitles_language",
+    "total_target_duration_sec",
+    "aspect_ratios",
+    "style_block",
+    "character_reference",
+    "music_spec",
+    "shots"
+  ],
+  "properties": {
+    "title": { "type": "string" },
+    "logline": { "type": "string" },
+    "language": { "type": "string" },
+    "subtitles_language": { "type": "string" },
+    "total_target_duration_sec": { "type": "number", "minimum": 60, "maximum": 90 },
+    "aspect_ratios": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["16:9", "9:16"] },
+      "minItems": 1
+    },
+    "style_block": {
+      "type": "object",
+      "required": ["visual_style", "lighting", "color_palette", "cinematography", "cultural_anchors"],
+      "properties": {
+        "visual_style": { "type": "string" },
+        "lighting": { "type": "string" },
+        "color_palette": { "type": "string" },
+        "cinematography": { "type": "string" },
+        "cultural_anchors": { "type": "string" }
+      }
+    },
+    "character_reference": {
+      "type": "object",
+      "required": ["mother_character", "child_character"],
+      "properties": {
+        "mother_character": {
+          "type": "object",
+          "required": ["name", "appearance", "attire"],
+          "properties": {
+            "name": { "type": "string" },
+            "appearance": { "type": "string" },
+            "attire": { "type": "string" }
+          }
+        },
+        "child_character": {
+          "type": "object",
+          "required": ["name", "appearance", "stages"],
+          "properties": {
+            "name": { "type": "string" },
+            "appearance": { "type": "string" },
+            "stages": { "type": "string" }
+          }
+        }
+      }
+    },
+    "music_spec": {
+      "type": "object",
+      "required": ["style", "instruments", "tempo_bpm", "key", "mood", "ducking_duck_db"],
+      "properties": {
+        "style": { "type": "string" },
+        "instruments": { "type": "array", "items": { "type": "string" } },
+        "tempo_bpm": { "type": "integer" },
+        "key": { "type": "string" },
+        "mood": { "type": "string" },
+        "ducking_duck_db": { "type": "number" }
+      }
+    },
+    "shots": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 14,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "chapter",
+          "duration_sec",
+          "shot_type",
+          "camera_movement",
+          "keyframe_prompt",
+          "motion_prompt",
+          "narration_text",
+          "subtitles_text",
+          "emotion",
+          "stated_reason",
+          "seed"
+        ],
+        "properties": {
+          "id": { "type": "integer" },
+          "chapter": { "type": "string" },
+          "duration_sec": { "type": "number", "minimum": 2, "maximum": 15 },
+          "shot_type": { "type": "string" },
+          "camera_movement": { "type": "string" },
+          "keyframe_prompt": { "type": "string" },
+          "motion_prompt": { "type": "string" },
+          "narration_text": { "type": "string" },
+          "subtitles_text": { "type": "string" },
+          "emotion": { "type": "string" },
+          "stated_reason": { "type": "string" },
+          "seed": { "type": "integer" }
+        }
+      }
+    }
+  }
+}
