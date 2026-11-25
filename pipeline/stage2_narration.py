@@ -1,13 +1,16 @@
 """
 Stage 2: Narration Generation & Radio Cut Assembly.
-Generates line-by-line speech audio for each shot with content-addressable caching,
-and compiles the Phase 1 Radio Cut.
+Generates line-by-line speech audio for each shot using Gemini 3.8 Flash TTS
+with content-addressable caching, and compiles the Phase 1 Radio Cut.
 """
+import base64
 import json
 import math
+import os
 import struct
 import time
 import wave
+from io import BytesIO
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -16,7 +19,6 @@ from pipeline.config import (
     STORYBOARD_PATH,
     NARRATION_DIR,
     ASSEMBLY_DIR,
-    EXPORTS_DIR,
     GEMINI_API_KEY
 )
 from pipeline.logger import audit_logger
@@ -30,8 +32,33 @@ def generate_silence_wav(path: Path, duration_sec: float, sample_rate: int = 240
         wf.setnchannels(1)
         wf.setsampwidth(2)
         wf.setframerate(sample_rate)
-        # Write 0s
         wf.writeframes(b"\x00\x00" * num_samples)
+
+
+def pad_or_trim_wav(raw_wav_bytes: bytes, target_path: Path, target_duration_sec: float):
+    """Adjusts speech audio file duration to match shot duration with natural trailing silence."""
+    with wave.open(BytesIO(raw_wav_bytes), "rb") as in_wf:
+        sample_rate = in_wf.getframerate()
+        channels = in_wf.getnchannels()
+        sampwidth = in_wf.getsampwidth()
+        frames = in_wf.readframes(in_wf.getnframes())
+
+    current_samples = len(frames) // (channels * sampwidth)
+    target_samples = int(target_duration_sec * sample_rate)
+
+    if current_samples < target_samples:
+        # Pad with silence at end
+        padding = b"\x00" * ((target_samples - current_samples) * channels * sampwidth)
+        final_frames = frames + padding
+    else:
+        # Trim to exact length
+        final_frames = frames[: target_samples * channels * sampwidth]
+
+    with wave.open(str(target_path), "wb") as out_wf:
+        out_wf.setnchannels(channels)
+        out_wf.setsampwidth(sampwidth)
+        out_wf.setframerate(sample_rate)
+        out_wf.writeframes(final_frames)
 
 
 def generate_synthetic_voice_sample(
@@ -40,10 +67,7 @@ def generate_synthetic_voice_sample(
     duration_sec: float,
     sample_rate: int = 24000
 ):
-    """
-    Fallback acoustic speech synthesizer that builds a warm vocal harmonic tone
-    modulated by speech cadence for offline / zero-key operation.
-    """
+    """Fallback acoustic speech synthesizer when offline."""
     num_samples = int(duration_sec * sample_rate)
     with wave.open(str(path), "wb") as wf:
         wf.setnchannels(1)
@@ -51,7 +75,6 @@ def generate_synthetic_voice_sample(
         wf.setframerate(sample_rate)
         
         frames = bytearray()
-        # Voice fundamental frequency F0 ~ 130 Hz (warm chest voice)
         f0 = 135.0
         words = [w for w in text.split() if w]
         num_words = max(1, len(words))
@@ -59,51 +82,56 @@ def generate_synthetic_voice_sample(
         
         for i in range(num_samples):
             t = float(i) / sample_rate
-            # Syllable cadence envelope
             word_idx = int(i / samples_per_word)
             pos_in_word = (i % samples_per_word) / samples_per_word
             envelope = math.sin(pos_in_word * math.pi) if word_idx < num_words else 0.0
             
-            # Harmonic vocal formants (135Hz, 270Hz, 405Hz)
             sample_val = (
                 0.6 * math.sin(2 * math.pi * f0 * t) +
                 0.3 * math.sin(2 * math.pi * 2 * f0 * t) +
                 0.1 * math.sin(2 * math.pi * 3 * f0 * t)
             ) * envelope * 0.35
             
-            # 16-bit PCM integer
             val_int = int(max(min(sample_val, 1.0), -1.0) * 32767)
             frames.extend(struct.pack("<h", val_int))
             
         wf.writeframes(frames)
 
 
-def call_gemini_tts(text: str, output_path: Path, api_key: str, style_directive: str = "calm, warm, unhurried") -> bool:
+def call_gemini_tts(
+    text: str,
+    target_path: Path,
+    target_duration: float,
+    api_key: str,
+    style_directive: str = "calm, warm, unhurried, respectful"
+) -> bool:
     """
-    Calls Gemini Flash Speech generation endpoint.
-    Returns True on success, False if network/key failed.
+    Calls Gemini 3.8 Flash TTS endpoint and writes standard broadcast WAV audio.
     """
     if not api_key:
         return False
-        
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-tts:generateContent?key={api_key}"
+    prompt = f"Speak with a {style_directive} documentary tone: {text}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-        headers = {"Content-Type": "application/json"}
-        prompt = f"Speak the following narration text with a {style_directive} tone:\n\n{text}"
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "response_mime_type": "audio/mp3"
-            }
-        }
-        resp = requests.post(url, headers=headers, json=payload, timeout=15)
+        resp = requests.post(url, json=payload, timeout=25)
         if resp.status_code == 200:
-            # If binary audio returned, write directly
-            with open(output_path, "wb") as f:
-                f.write(resp.content)
-            return True
+            res_json = resp.json()
+            candidates = res_json.get("candidates", [])
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                for part in parts:
+                    if "inlineData" in part and part["inlineData"].get("data"):
+                        audio_bytes = base64.b64decode(part["inlineData"]["data"])
+                        pad_or_trim_wav(audio_bytes, target_path, target_duration)
+                        return True
         return False
-    except Exception:
+    except Exception as e:
+        print(f"    [TTS API Retry/Fallback] {e}")
         return False
 
 
@@ -112,7 +140,7 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
     audio_paths = {}
     shots = storyboard["shots"]
     
-    print(f"\n[Stage 2] Generating narration for {len(shots)} shots...")
+    print(f"\n[Stage 2] Generating narration for {len(shots)} shots (Gemini 3.8 Flash TTS)...")
     
     for shot in shots:
         shot_id = shot["id"]
@@ -124,7 +152,8 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
             "text": text,
             "duration_sec": duration,
             "language": storyboard.get("language", "en-US"),
-            "style": "calm, warm, unhurried"
+            "model": "gemini-3.8-flash-tts-v1",
+            "style": "calm, warm, unhurried, respectful"
         }
         
         target_path, input_hash, is_cached = CacheManager.get_artifact(
@@ -159,7 +188,7 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
             model_name = "pcm_silence_generator"
         else:
             if GEMINI_API_KEY:
-                success = call_gemini_tts(text, target_path, GEMINI_API_KEY)
+                success = call_gemini_tts(text, target_path, duration, GEMINI_API_KEY)
                 
             if not success:
                 # Use resilient acoustic fallback
