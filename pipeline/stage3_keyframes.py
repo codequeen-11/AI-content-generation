@@ -28,28 +28,28 @@ def call_cloudflare_flux(
     prompt: str,
     account_id: str,
     api_token: str,
-    output_path: Path,
-    num_steps: int = 4
+    output_path: Path
 ) -> bool:
     """
     Calls Cloudflare Workers AI (@cf/black-forest-labs/flux-1-schnell).
-    Matches challenge specification for zero-cost daily free tier.
+    Direct free tier integration as specified in challenge documentation.
     """
-    if not account_id or not api_token:
+    acc = account_id.strip()
+    tok = api_token.strip()
+    if not acc or not tok:
         return False
         
-    url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/@cf/black-forest-labs/flux-1-schnell"
+    url = f"https://api.cloudflare.com/client/v4/accounts/{acc}/ai/run/@cf/black-forest-labs/flux-1-schnell"
     headers = {
-        "Authorization": f"Bearer {api_token}",
+        "Authorization": f"Bearer {tok}",
         "Content-Type": "application/json"
     }
     payload = {
-        "prompt": prompt,
-        "num_steps": num_steps
+        "prompt": prompt
     }
     
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=45)
+        resp = requests.post(url, headers=headers, json=payload, timeout=60)
         if resp.status_code == 200:
             content_type = resp.headers.get("content-type", "")
             if "image" in content_type:
@@ -58,7 +58,6 @@ def call_cloudflare_flux(
                 img_hd.save(output_path, "PNG")
                 return True
             else:
-                # If returned JSON with base64 string
                 res_data = resp.json()
                 b64_img = res_data.get("result", {}).get("image")
                 if b64_img:
@@ -81,7 +80,7 @@ def call_diffusion_fallback(
     output_path: Path,
     retries: int = 2
 ) -> bool:
-    """Reliable high-speed diffusion fallback when Cloudflare credentials are unset."""
+    """Fast diffusion fallback if cloud endpoint is busy."""
     encoded_prompt = urllib.parse.quote(prompt.strip())
     url = (
         f"https://image.pollinations.ai/prompt/{encoded_prompt}"
@@ -110,7 +109,7 @@ def create_procedural_fallback_card(
     width: int = 1920,
     height: int = 1080
 ):
-    """Fallback visual card if network is unavailable."""
+    """Fallback visual card if offline."""
     chapter = shot.get("chapter", "")
     shot_id = shot["id"]
     
@@ -157,16 +156,16 @@ def generate_keyframes_for_shots(storyboard: dict, force: bool = False) -> Dict[
         
         # Center-safe composition with explicit Ethiopian cultural anchors
         full_prompt = (
-            f"{prompt}. Authentic Ethiopian heritage, pure white Netela cotton scarf "
-            f"with colorful Tibeb geometric embroidery, subject centered in middle of frame, "
-            f"cinematic 35mm photography, warm natural sunlight, high detail"
+            f"{prompt}. Authentic Ethiopian cultural heritage, traditional white Netela cotton scarf "
+            f"with colorful woven Tibeb border, subject centered in middle of frame, "
+            f"cinematic 35mm film still, warm golden morning light, highly detailed"
         )
         
         input_data = {
             "shot_id": shot_id,
             "prompt": prompt,
             "seed": seed,
-            "engine": "cf-flux-v3" if using_cf else "diffusion-v3",
+            "engine": "cloudflare-flux-v4" if using_cf else "diffusion-v4",
             "style_block": style_block,
             "character_reference": char_ref
         }
@@ -222,7 +221,7 @@ def generate_keyframes_for_shots(storyboard: dict, force: bool = False) -> Dict[
         )
         print(f"  - Shot {shot_id:02d}: [GENERATED ({model_name})] ({latency:.2f}s) -> {target_path.name}")
         keyframe_paths[shot_id] = target_path
-        time.sleep(2.0)
+        time.sleep(1.5)
         
     return keyframe_paths
 

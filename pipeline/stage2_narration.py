@@ -1,8 +1,8 @@
 """
 Stage 2: Narration Generation & Radio Cut Assembly.
 Generates line-by-line speech audio for each shot using Gemini 3.8 Flash TTS
-with clean prompt text (no meta-instructions spoken aloud), content-addressable caching,
-and compiles the Phase 1 Radio Cut.
+with clean text (no meta-instructions spoken aloud), compliant rate-limit spacing,
+content-addressable caching, and compiles the Phase 1 Radio Cut.
 """
 import base64
 import json
@@ -104,7 +104,7 @@ def call_gemini_tts(
     target_path: Path,
     target_duration: float,
     api_key: str,
-    retries: int = 3
+    retries: int = 4
 ) -> bool:
     """
     Calls Gemini 3.8 Flash TTS endpoint with pure text so no meta-instructions are read.
@@ -119,7 +119,7 @@ def call_gemini_tts(
 
     for attempt in range(retries):
         try:
-            resp = requests.post(url, json=payload, timeout=25)
+            resp = requests.post(url, json=payload, timeout=30)
             if resp.status_code == 200:
                 res_json = resp.json()
                 candidates = res_json.get("candidates", [])
@@ -131,12 +131,11 @@ def call_gemini_tts(
                             pad_or_trim_wav(audio_bytes, target_path, target_duration)
                             return True
             elif resp.status_code == 429:
-                # Rate limit backoff
-                time.sleep(3.0 * (attempt + 1))
+                time.sleep(4.0 * (attempt + 1))
             else:
-                time.sleep(1.5)
-        except Exception as e:
-            time.sleep(2.0)
+                time.sleep(2.0)
+        except Exception:
+            time.sleep(3.0)
             
     return False
 
@@ -153,13 +152,12 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
         text = shot.get("narration_text", "").strip()
         duration = shot["duration_sec"]
         
-        # input_data defines cache key - v2 ensures clean text without meta prompts
         input_data = {
             "shot_id": shot_id,
             "text": text,
             "duration_sec": duration,
             "language": storyboard.get("language", "en-US"),
-            "model": "gemini-3.8-flash-tts-clean-v2"
+            "model": "gemini-3.8-flash-tts-clean-v3"
         }
         
         target_path, input_hash, is_cached = CacheManager.get_artifact(
@@ -195,7 +193,7 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
         else:
             if GEMINI_API_KEY:
                 success = call_gemini_tts(text, target_path, duration, GEMINI_API_KEY)
-                time.sleep(1.0) # brief pause to prevent rate limit
+                time.sleep(3.0) # Respect rate limits
                 
             if not success:
                 # Use resilient acoustic fallback
