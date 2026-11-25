@@ -1,7 +1,8 @@
 """
 Stage 2: Narration Generation & Radio Cut Assembly.
 Generates line-by-line speech audio for each shot using Gemini 3.8 Flash TTS
-with content-addressable caching, and compiles the Phase 1 Radio Cut.
+with clean prompt text (no meta-instructions spoken aloud), content-addressable caching,
+and compiles the Phase 1 Radio Cut.
 """
 import base64
 import json
@@ -99,40 +100,45 @@ def generate_synthetic_voice_sample(
 
 
 def call_gemini_tts(
-    text: str,
+    clean_text: str,
     target_path: Path,
     target_duration: float,
     api_key: str,
-    style_directive: str = "calm, warm, unhurried, respectful"
+    retries: int = 3
 ) -> bool:
     """
-    Calls Gemini 3.8 Flash TTS endpoint and writes standard broadcast WAV audio.
+    Calls Gemini 3.8 Flash TTS endpoint with pure text so no meta-instructions are read.
     """
     if not api_key:
         return False
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-tts:generateContent?key={api_key}"
-    prompt = f"Speak with a {style_directive} documentary tone: {text}"
     payload = {
-        "contents": [{"parts": [{"text": prompt}]}]
+        "contents": [{"parts": [{"text": clean_text.strip()}]}]
     }
 
-    try:
-        resp = requests.post(url, json=payload, timeout=25)
-        if resp.status_code == 200:
-            res_json = resp.json()
-            candidates = res_json.get("candidates", [])
-            if candidates:
-                parts = candidates[0].get("content", {}).get("parts", [])
-                for part in parts:
-                    if "inlineData" in part and part["inlineData"].get("data"):
-                        audio_bytes = base64.b64decode(part["inlineData"]["data"])
-                        pad_or_trim_wav(audio_bytes, target_path, target_duration)
-                        return True
-        return False
-    except Exception as e:
-        print(f"    [TTS API Retry/Fallback] {e}")
-        return False
+    for attempt in range(retries):
+        try:
+            resp = requests.post(url, json=payload, timeout=25)
+            if resp.status_code == 200:
+                res_json = resp.json()
+                candidates = res_json.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    for part in parts:
+                        if "inlineData" in part and part["inlineData"].get("data"):
+                            audio_bytes = base64.b64decode(part["inlineData"]["data"])
+                            pad_or_trim_wav(audio_bytes, target_path, target_duration)
+                            return True
+            elif resp.status_code == 429:
+                # Rate limit backoff
+                time.sleep(3.0 * (attempt + 1))
+            else:
+                time.sleep(1.5)
+        except Exception as e:
+            time.sleep(2.0)
+            
+    return False
 
 
 def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[int, Path]:
@@ -147,13 +153,13 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
         text = shot.get("narration_text", "").strip()
         duration = shot["duration_sec"]
         
+        # input_data defines cache key - v2 ensures clean text without meta prompts
         input_data = {
             "shot_id": shot_id,
             "text": text,
             "duration_sec": duration,
             "language": storyboard.get("language", "en-US"),
-            "model": "gemini-3.8-flash-tts-v1",
-            "style": "calm, warm, unhurried, respectful"
+            "model": "gemini-3.8-flash-tts-clean-v2"
         }
         
         target_path, input_hash, is_cached = CacheManager.get_artifact(
@@ -189,6 +195,7 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
         else:
             if GEMINI_API_KEY:
                 success = call_gemini_tts(text, target_path, duration, GEMINI_API_KEY)
+                time.sleep(1.0) # brief pause to prevent rate limit
                 
             if not success:
                 # Use resilient acoustic fallback
