@@ -1,7 +1,7 @@
 """
 Stage 2: Narration Generation & Radio Cut Assembly.
-Generates line-by-line speech audio for each shot using clean speech synthesis
-(Gemini 3.8 Flash TTS with automatic Windows Neural/SAPI voice fallback for 100% spoken coverage),
+Generates line-by-line speech audio for each shot using Gemini 3.8 Flash TTS / Flash-Lite TTS
+with intelligent model fallback (Flash -> Flash-Lite -> Windows Neural voice),
 content-addressable caching, and compiles the Phase 1 Radio Cut.
 """
 import base64
@@ -65,10 +65,7 @@ def pad_or_trim_wav(raw_wav_bytes: bytes, target_path: Path, target_duration_sec
 
 
 def generate_sapi_voice(text: str, target_path: Path, target_duration_sec: float, rate: int = -1) -> bool:
-    """
-    Synthesizes crystal-clear spoken voice using Windows native SAPI SpeechSynthesizer,
-    perfectly padded and formatted to the shot duration.
-    """
+    """Synthesizes voice using Windows SAPI SpeechSynthesizer."""
     temp_wav = target_path.with_suffix(".tmp.wav")
     try:
         speaker = win32com.client.Dispatch("SAPI.SpVoice")
@@ -106,33 +103,39 @@ def call_gemini_tts(
     target_path: Path,
     target_duration: float,
     api_key: str
-) -> bool:
+) -> tuple[bool, str]:
     """
-    Calls Gemini 3.8 Flash TTS endpoint with pure text.
+    Attempts Gemini Flash TTS models with automatic fallback between Flash and Flash-Lite.
+    Returns (success, model_used).
     """
     if not api_key:
-        return False
+        return False, ""
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-tts:generateContent?key={api_key}"
+    models = ["gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts"]
     payload = {
         "contents": [{"parts": [{"text": clean_text.strip()}]}]
     }
 
-    try:
-        resp = requests.post(url, json=payload, timeout=20)
-        if resp.status_code == 200:
-            res_json = resp.json()
-            candidates = res_json.get("candidates", [])
-            if candidates:
-                parts = candidates[0].get("content", {}).get("parts", [])
-                for part in parts:
-                    if "inlineData" in part and part["inlineData"].get("data"):
-                        audio_bytes = base64.b64decode(part["inlineData"]["data"])
-                        pad_or_trim_wav(audio_bytes, target_path, target_duration)
-                        return True
-        return False
-    except Exception:
-        return False
+    for model in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        try:
+            resp = requests.post(url, json=payload, timeout=20)
+            if resp.status_code == 200:
+                res_json = resp.json()
+                candidates = res_json.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    for part in parts:
+                        if "inlineData" in part and part["inlineData"].get("data"):
+                            audio_bytes = base64.b64decode(part["inlineData"]["data"])
+                            pad_or_trim_wav(audio_bytes, target_path, target_duration)
+                            return True, model
+            elif resp.status_code == 429:
+                continue # Try next model
+        except Exception:
+            continue
+            
+    return False, ""
 
 
 def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[int, Path]:
@@ -140,20 +143,20 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
     audio_paths = {}
     shots = storyboard["shots"]
     
-    print(f"\n[Stage 2] Generating spoken narration for {len(shots)} shots...")
+    print(f"\n[Stage 2] Generating spoken narration for {len(shots)} shots (Gemini Flash-Lite TTS)...")
     
     for shot in shots:
         shot_id = shot["id"]
         text = shot.get("narration_text", "").strip()
         duration = shot["duration_sec"]
         
-        # input_data defines cache key - v4 guarantees actual spoken audio
+        # input_data defines cache key - v5 enables flash-lite tier
         input_data = {
             "shot_id": shot_id,
             "text": text,
             "duration_sec": duration,
             "language": storyboard.get("language", "en-US"),
-            "model": "spoken-narration-v4"
+            "model": "gemini-tts-v5-lite"
         }
         
         target_path, input_hash, is_cached = CacheManager.get_artifact(
@@ -166,7 +169,7 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
         if is_cached and not force:
             audit_logger.log_run(
                 stage="stage2_narration",
-                model="spoken-voice-engine",
+                model="gemini-tts-engine",
                 parameters=input_data,
                 seed=shot.get("seed"),
                 latency_sec=0.001,
@@ -180,7 +183,7 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
             
         t0 = time.time()
         success = False
-        model_name = "gemini-3.8-flash-tts"
+        model_name = "gemini-3.8-flash-lite-tts"
         
         if not text:
             generate_silence_wav(target_path, duration_sec=duration)
@@ -188,10 +191,12 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
             model_name = "pcm_silence_generator"
         else:
             if GEMINI_API_KEY:
-                success = call_gemini_tts(text, target_path, duration, GEMINI_API_KEY)
+                success, model_used = call_gemini_tts(text, target_path, duration, GEMINI_API_KEY)
+                if success:
+                    model_name = model_used
+                    time.sleep(2.0)
                 
             if not success:
-                # Real spoken voice synthesis (Speaks the exact words clearly)
                 success = generate_sapi_voice(text, target_path, duration, rate=-1)
                 model_name = "windows-spoken-voice"
                 
