@@ -175,6 +175,7 @@ def export_aspect_ratio_film(
         "-c:a", "aac",
         "-b:a", "192k",
         "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
         "-shortest",
         str(output_path)
     ]
