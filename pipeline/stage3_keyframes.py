@@ -155,11 +155,24 @@ def generate_keyframes_for_shots(storyboard: dict, force: bool = False) -> Dict[
         seed = shot.get("seed", 42000 + shot_id)
         
         # Center-safe composition with explicit Ethiopian cultural anchors
-        full_prompt = (
-            f"{prompt}. Authentic Ethiopian cultural heritage, traditional white Netela cotton scarf "
-            f"with colorful woven Tibeb border, subject centered in middle of frame, "
-            f"cinematic 35mm film still, warm golden morning light, highly detailed"
-        )
+        if shot_id == 13:
+            full_prompt = f"{prompt}, perfectly centered, clean 16:9 graphic design"
+        elif shot_id == 9:
+            full_prompt = (
+                f"{prompt}, subject centered in middle of frame, authentic Ethiopian university graduation, "
+                f"photorealistic 35mm documentary film photography, natural daylight, highly detailed"
+            )
+        elif shot_id == 10:
+            full_prompt = (
+                f"{prompt}, subject centered in middle of frame, authentic generational embrace, "
+                f"photorealistic 35mm documentary portrait photography, natural lighting, highly detailed"
+            )
+        else:
+            full_prompt = (
+                f"{prompt}. Authentic Ethiopian cultural heritage, traditional white Netela cotton scarf "
+                f"with colorful woven Tibeb border, subject centered in middle of frame, "
+                f"cinematic 35mm film still, warm golden morning light, highly detailed"
+            )
         
         input_data = {
             "shot_id": shot_id,

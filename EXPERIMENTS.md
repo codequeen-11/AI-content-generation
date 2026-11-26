@@ -81,3 +81,14 @@ This document records the empirical experiments conducted during the development
 - **Change**: Compared single-pass dynamic compression vs two-pass measured `loudnorm`.
 - **Result**: Two-pass normalization eliminated all digital clipping, producing integrated loudness of exactly $-14.1\text{ LUFS}$ and true peak of $-1.2\text{ dBFS}$.
 - **Decision**: Assembly stage executes two-pass measurement and normalization before final muxing.
+
+---
+
+### Experiment 11: Visual Realism & Intergenerational Contrast Refinement (Shots 5, 9, 10)
+- **Hypothesis**: Replacing bokeh-heavy or generic prompts with explicit architectural depth and precise generational age contrasts eliminates background blur and prevents peer-like ambiguity between mother and daughter.
+- **Change**:
+  - **Shot 5**: Shifted from soft bokeh background to deep depth of field depicting authentic Ethiopian school iron entrance gate, stone boundary walls, and students in blue uniforms.
+  - **Shot 9**: Replaced generic collegiate lawn with authentic Addis Ababa University campus architecture, real graduates in black academic gowns and caps with ribbon-tied diploma scrolls.
+  - **Shot 10**: Explicitly prompted a 40-year generational age gap: an elderly 60-year-old mother (silver hair, weathered wrinkles, traditional Netela with Tibeb embroidery) tightly embracing her 22-year-old university graduate daughter.
+- **Result**: Cloudflare Workers AI FLUX.1 schnell rendered realistic, authentic documentary stills with unmistakable intergenerational contrast, crisp school gate architecture, and natural graduation celebration.
+- **Decision**: Integrated updated prompts into `storyboard.json` and re-rendered moving shot clips and final 16:9 and 9:16 video exports.
