@@ -92,3 +92,13 @@ This document records the empirical experiments conducted during the development
   - **Shot 10**: Explicitly prompted a 40-year generational age gap: an elderly 60-year-old mother (silver hair, weathered wrinkles, traditional Netela with Tibeb embroidery) tightly embracing her 22-year-old university graduate daughter.
 - **Result**: Cloudflare Workers AI FLUX.1 schnell rendered realistic, authentic documentary stills with unmistakable intergenerational contrast, crisp school gate architecture, and natural graduation celebration.
 - **Decision**: Integrated updated prompts into `storyboard.json` and re-rendered moving shot clips and final 16:9 and 9:16 video exports.
+
+---
+
+### Experiment 12: Dual-Aspect Subtitle Positioning and Ambient Reframe (9:16 Vertical)
+- **Hypothesis**: Aggressive 9:16 center-cropping discards 68% of 16:9 cinematic framing (cutting off key subjects on frame edges), and default SRT styling with `BorderStyle=3` renders an opaque black box that obscures visual action. An ambient blurred-canvas layout paired with format-specific ASS subtitles will preserve 100% of the cinematic framing and keep subtitles cleanly docked at the bottom without obstruction.
+- **Change**:
+  - Implemented ambient reframe in `pipeline/stage6_assemble.py`: full 16:9 foreground video (1080×608) centered at $y=560$ with softly blurred matching background video filling the 1080×1920 canvas.
+  - Replaced SRT styling with custom ASS scripts (`PlayResY: 1920` for 9:16 and `PlayResY: 1080` for 16:9), setting `Alignment=2`, `MarginV=260` (9:16 bottom safe zone) and `MarginV=70` (16:9), with clean white text, dark outline, and soft drop shadow (`BorderStyle=1`).
+- **Result**: 100% of the visual scene (including the mother, the Jebena pot, and all actions) is preserved without any cropping cutoffs. Subtitles sit neatly in the lower safe area with zero obstruction.
+- **Decision**: Locked ambient reframe and ASS subtitle generator into Stage 6.
