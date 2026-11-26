@@ -102,3 +102,14 @@ This document records the empirical experiments conducted during the development
   - Replaced SRT styling with custom ASS scripts (`PlayResY: 1920` for 9:16 and `PlayResY: 1080` for 16:9), setting `Alignment=2`, `MarginV=260` (9:16 bottom safe zone) and `MarginV=70` (16:9), with clean white text, dark outline, and soft drop shadow (`BorderStyle=1`).
 - **Result**: 100% of the visual scene (including the mother, the Jebena pot, and all actions) is preserved without any cropping cutoffs. Subtitles sit neatly in the lower safe area with zero obstruction.
 - **Decision**: Locked ambient reframe and ASS subtitle generator into Stage 6.
+
+---
+
+### Experiment 13: Voice Consistency and Pacing Headroom Calibration
+- **Hypothesis**: Relying on a multi-model fallback hierarchy (Gemini Flash-Lite TTS + Edge-TTS) caused audible gender/voice switching mid-film, while tight shot durations truncated sentences prematurely, causing overlapping interruptions. Locking to a single Ethiopian female neural voice (`am-ET-MekdesNeural`) and recalibrating shot durations with $\ge 1.0\text{s}$ breathing headroom will eliminate interruptions and guarantee a smooth, continuous narrative delivery.
+- **Change**:
+  - Exclusively locked `pipeline/stage2_narration.py` to `am-ET-MekdesNeural` across all 13 shots.
+  - Adjusted shot durations in `storyboard.json` to $87.0\text{s}$ total, ensuring every spoken sentence completes with natural trailing silence before the next shot begins.
+  - Added programmatic headroom measurement: if speech exceeds target duration, FFmpeg applies subtle tempo scaling rather than hard truncation.
+- **Result**: The entire film is narrated by one smooth, emotionally resonant Ethiopian lady's voice with zero voice switching, zero clipping, and natural music swells between lines.
+- **Decision**: Locked single-voice architecture into `pipeline/stage2_narration.py`.

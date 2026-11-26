@@ -65,24 +65,59 @@ def pad_or_trim_wav(raw_wav_bytes: bytes, target_path: Path, target_duration_sec
         out_wf.writeframes(final_frames)
 
 
-def generate_edge_amharic_tts(text: str, target_path: Path, target_duration_sec: float) -> bool:
+def generate_edge_amharic_tts(text: str, target_path: Path, target_duration_sec: float, retries: int = 3) -> bool:
     """
     Generates natural human Amharic speech using Edge Neural Voice (am-ET-MekdesNeural).
-    Zero quota limits, broadcast-grade pronunciation.
+    Single consistent Ethiopian lady voice across all segments with zero interruption and natural decay.
     """
     temp_mp3 = target_path.with_suffix(".tmp.mp3")
     
     async def _render():
-        communicate = edge_tts.Communicate(text.strip(), "am-ET-MekdesNeural", rate="-4%")
+        communicate = edge_tts.Communicate(text.strip(), "am-ET-MekdesNeural", rate="+0%")
         await communicate.save(str(temp_mp3))
         
+    for attempt in range(retries):
+        try:
+            asyncio.run(_render())
+            if temp_mp3.exists() and temp_mp3.stat().st_size > 1000:
+                break
+            time.sleep(1.5)
+        except Exception as e:
+            print(f"    [Edge TTS Mekdes Retry {attempt+1}] {e}")
+            time.sleep(2.0)
+            
+    if not temp_mp3.exists():
+        return False
+        
     try:
-        asyncio.run(_render())
         ffmpeg_bin = get_ffmpeg_bin()
+        ffprobe = ffmpeg_bin.replace("ffmpeg.exe", "ffprobe.exe")
+        
+        # Probe exact spoken length
+        probe_cmd = [
+            ffprobe, "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(temp_mp3)
+        ]
+        out = subprocess.check_output(probe_cmd).decode().strip()
+        spoken_dur = float(out)
+        
+        # Ensure at least 0.8s headroom for natural music breathing and zero interruption
+        min_headroom = 0.8
+        max_allowed_voice = target_duration_sec - min_headroom
+        
+        if spoken_dur > max_allowed_voice:
+            tempo = spoken_dur / max_allowed_voice
+            tempo = min(max(tempo, 1.0), 1.20)
+            af = f"atempo={tempo:.3f},apad=whole_dur={target_duration_sec}"
+        else:
+            af = f"apad=whole_dur={target_duration_sec}"
+            
         cmd = [
             ffmpeg_bin, "-y",
             "-i", str(temp_mp3),
-            "-af", f"apad=whole_dur={target_duration_sec}",
+            "-af", af,
             "-t", str(target_duration_sec),
             "-ar", "24000",
             "-ac", "1",
@@ -90,69 +125,34 @@ def generate_edge_amharic_tts(text: str, target_path: Path, target_duration_sec:
             str(target_path)
         ]
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if temp_mp3.exists():
-            temp_mp3.unlink()
         return res.returncode == 0
     except Exception as e:
-        print(f"    [Edge TTS Amharic Error] {e}")
+        print(f"    [FFmpeg Speech Process Error] {e}")
+        return False
+    finally:
         if temp_mp3.exists():
             temp_mp3.unlink()
-        return False
-
-
-def call_gemini_amharic_tts(
-    clean_text: str,
-    target_path: Path,
-    target_duration: float,
-    api_key: str
-) -> tuple[bool, str]:
-    """
-    Calls Gemini Flash-Lite TTS endpoint with pure Amharic text.
-    """
-    if not api_key:
-        return False, ""
-
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash-lite-tts:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"parts": [{"text": clean_text.strip()}]}]
-    }
-
-    try:
-        resp = requests.post(url, json=payload, timeout=25)
-        if resp.status_code == 200:
-            res_json = resp.json()
-            candidates = res_json.get("candidates", [])
-            if candidates:
-                parts = candidates[0].get("content", {}).get("parts", [])
-                for part in parts:
-                    if "inlineData" in part and part["inlineData"].get("data"):
-                        audio_bytes = base64.b64decode(part["inlineData"]["data"])
-                        pad_or_trim_wav(audio_bytes, target_path, target_duration)
-                        return True, "gemini-3.8-flash-lite-tts"
-        return False, ""
-    except Exception:
-        return False, ""
 
 
 def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[int, Path]:
-    """Generates authentic Amharic spoken audio for every shot in storyboard."""
+    """Generates authentic Amharic spoken audio for every shot using exclusively MekdesNeural."""
     audio_paths = {}
     shots = storyboard["shots"]
     
-    print(f"\n[Stage 2] Generating authentic AMHARIC spoken narration for {len(shots)} shots...")
+    print(f"\n[Stage 2] Generating single consistent lady voice (am-ET-MekdesNeural) for {len(shots)} shots...")
     
     for shot in shots:
         shot_id = shot["id"]
         text = shot.get("narration_text", "").strip()
         duration = shot["duration_sec"]
         
-        # input_data defines cache key - v6-amharic ensures fresh Amharic renders
+        # Cache key ensures fresh consistent single-voice generation
         input_data = {
             "shot_id": shot_id,
             "text": text,
             "duration_sec": duration,
             "language": "am-ET",
-            "model": "amharic-neural-v6"
+            "voice": "am-ET-MekdesNeural-exclusive-v3"
         }
         
         target_path, input_hash, is_cached = CacheManager.get_artifact(
@@ -165,7 +165,7 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
         if is_cached and not force:
             audit_logger.log_run(
                 stage="stage2_narration",
-                model="amharic-tts-engine",
+                model="amharic-lady-mekdes",
                 parameters=input_data,
                 seed=shot.get("seed"),
                 latency_sec=0.001,
@@ -173,29 +173,25 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
                 status="success",
                 output_path=str(target_path)
             )
-            print(f"  - Shot {shot_id:02d}: [CACHED AMHARIC] {target_path.name}")
+            print(f"  - Shot {shot_id:02d}: [CACHED MEKDES] {target_path.name}")
             audio_paths[shot_id] = target_path
             continue
             
         t0 = time.time()
         success = False
-        model_name = "gemini-3.8-flash-lite-tts"
+        model_name = "amharic-lady-mekdes"
         
         if not text:
             generate_silence_wav(target_path, duration_sec=duration)
             success = True
             model_name = "pcm_silence_generator"
         else:
-            if GEMINI_API_KEY:
-                success, model_used = call_gemini_amharic_tts(text, target_path, duration, GEMINI_API_KEY)
-                if success:
-                    model_name = model_used
-                    time.sleep(2.0)
-                
+            # Exclusively use am-ET-MekdesNeural for a single, consistent, smooth lady voice
+            success = generate_edge_amharic_tts(text, target_path, duration)
             if not success:
-                # Guaranteed native Amharic neural voice (am-ET-MekdesNeural)
+                # Retry once if transient network jitter
+                time.sleep(2.0)
                 success = generate_edge_amharic_tts(text, target_path, duration)
-                model_name = "amharic-neural-mekdes"
                 
         latency = time.time() - t0
         audit_logger.log_run(
@@ -208,8 +204,11 @@ def generate_narration_for_shots(storyboard: dict, force: bool = False) -> Dict[
             status="success" if success else "error",
             output_path=str(target_path)
         )
-        print(f"  - Shot {shot_id:02d}: [AMHARIC SPOKEN ({model_name})] ({latency:.2f}s) -> {target_path.name}")
+        print(f"  - Shot {shot_id:02d}: [MEKDES SPOKEN] ({latency:.2f}s) -> {target_path.name}")
         audio_paths[shot_id] = target_path
+        time.sleep(0.5)
+        
+    return audio_paths
         
     return audio_paths
 

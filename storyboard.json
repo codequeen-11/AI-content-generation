@@ -3,7 +3,7 @@
   "logline": "A tribute to the women who may never have had the chance to attend school themselves, yet made education their greatest dream for their children.",
   "language": "am-ET",
   "subtitles_language": "en",
-  "total_target_duration_sec": 75.0,
+  "total_target_duration_sec": 87.0,
   "aspect_ratios": ["16:9", "9:16"],
   "style_block": {
     "visual_style": "Cinematic 35mm film photography, gentle grain, soft naturalistic contrast, authentic Ethiopian cultural realism",
@@ -36,7 +36,7 @@
     {
       "id": 1,
       "chapter": "Chapter 1 – Their Beginnings",
-      "duration_sec": 6.0,
+      "duration_sec": 8.5,
       "shot_type": "Establishing Wide Shot",
       "camera_movement": "Slow panoramic tilt-down through rolling morning mountain mist",
       "keyframe_prompt": "Cinematic wide shot of misty Ethiopian highland hills at dawn, rolling green terraced slopes, solitary woman walking peacefully on a dirt ridge under golden sunrise, authentic rural Ethiopia landscape, 35mm film, warm natural lighting, centered framing",
@@ -50,7 +50,7 @@
     {
       "id": 2,
       "chapter": "Chapter 1 – Their Beginnings",
-      "duration_sec": 6.0,
+      "duration_sec": 6.5,
       "shot_type": "Close-Up Shot",
       "camera_movement": "Macro focus pull across weaving needle and thread",
       "keyframe_prompt": "Close-up of weathered, dignified Ethiopian woman's hands skillfully threading needle into pure white cotton Netela fabric, intricate red and gold Tibeb geometric embroidery, shallow depth of field, warm morning light, tactile textile detail, centered framing",
@@ -64,7 +64,7 @@
     {
       "id": 3,
       "chapter": "Chapter 2 – Their Sacrifices",
-      "duration_sec": 6.5,
+      "duration_sec": 7.0,
       "shot_type": "Medium Shot",
       "camera_movement": "Slow gentle push-in toward the coffee embers",
       "keyframe_prompt": "Medium shot of Ethiopian mother in rural courtyard at dawn, blowing softly on glowing embers under a traditional black clay Jebena coffee pot, thin aromatic smoke catching early sunlight, pure white Netela draped over head, authentic earthen kitchen, centered framing",
@@ -92,7 +92,7 @@
     {
       "id": 5,
       "chapter": "Chapter 3 – The Dreams They Gave Us",
-      "duration_sec": 7.0,
+      "duration_sec": 7.5,
       "shot_type": "Medium Shot",
       "camera_movement": "Slow intimate pan from children passing by to mother's eyes",
       "keyframe_prompt": "Photorealistic documentary photograph of an authentic Ethiopian rural school entrance with an iron gate and stone boundary wall, children in neat blue uniforms with backpacks walking through the gate into the schoolyard, an Ethiopian mother wearing a traditional white cotton Netela standing outside watching them with quiet longing and reverence, sharp focus throughout, deep depth of field, clear school gate architecture, morning daylight, centered framing",
@@ -106,7 +106,7 @@
     {
       "id": 6,
       "chapter": "Chapter 3 – The Dreams They Gave Us",
-      "duration_sec": 6.5,
+      "duration_sec": 6.0,
       "shot_type": "Low-Angle Interior Shot",
       "camera_movement": "Static locked-off shot with flickering kerosene illumination",
       "keyframe_prompt": "Interior night shot in modest Ethiopian highland home, warm glow of a small kerosene Kuraz lamp illuminating a rustic wooden study table, shadows dancing on earthen walls, atmospheric intimate cinematic composition, centered framing",
@@ -120,7 +120,7 @@
     {
       "id": 7,
       "chapter": "Chapter 3 – The Dreams They Gave Us",
-      "duration_sec": 7.0,
+      "duration_sec": 6.0,
       "shot_type": "Extreme Close-Up",
       "camera_movement": "Slow macro drift across open exercise book",
       "keyframe_prompt": "Extreme close-up of mother's weathered finger gently tracing unfamiliar printed sentences and mathematical equations in her young child's open paper notebook, soft yellow kerosene lamplight, reverence and wonder in the touch, centered framing",
@@ -134,7 +134,7 @@
     {
       "id": 8,
       "chapter": "Chapter 3 – The Dreams They Gave Us",
-      "duration_sec": 6.5,
+      "duration_sec": 7.0,
       "shot_type": "Medium Two-Shot",
       "camera_movement": "Slow tender push-in toward mother and son",
       "keyframe_prompt": "Medium two-shot of Ethiopian mother gently placing her hand on her young son's shoulder as he concentrates writing in his notebook by lamplight, mother looking at him with immense pride and devotion, warm amber tones, centered framing",
@@ -148,7 +148,7 @@
     {
       "id": 9,
       "chapter": "Chapter 4 – Their Legacy",
-      "duration_sec": 6.0,
+      "duration_sec": 6.5,
       "shot_type": "Wide Exterior Shot",
       "camera_movement": "Elevated slow tracking shot across university quadrangle",
       "keyframe_prompt": "Photorealistic documentary photograph of an Ethiopian university graduation ceremony on an authentic Addis Ababa university campus, group of young Ethiopian graduates in authentic black academic gowns and caps cheering under clear blue sky, holding official diploma scrolls with red ribbons, historic campus stone hall and green trees in background, authentic Ethiopian skin tones and joyous candid expressions, sharp focus, natural daytime lighting, centered framing",
@@ -176,7 +176,7 @@
     {
       "id": 11,
       "chapter": "Chapter 4 – Their Legacy",
-      "duration_sec": 6.0,
+      "duration_sec": 8.0,
       "shot_type": "Extreme Close-Up",
       "camera_movement": "Static intimate focus on intertwined hands",
       "keyframe_prompt": "Extreme close-up of young graduate's smooth hand holding his mother's weathered, calloused hand against the graduation diploma ribbon and colorful woven Tibeb sash, golden afternoon sunbeam, symbolic generational triumph, centered framing",
@@ -190,7 +190,7 @@
     {
       "id": 12,
       "chapter": "Chapter 4 – Their Legacy",
-      "duration_sec": 6.0,
+      "duration_sec": 6.5,
       "shot_type": "Medium Close-Up Portrait",
       "camera_movement": "Slow gentle push into mother's serene, smiling face",
       "keyframe_prompt": "Cinematic portrait medium close-up of elderly Ethiopian mother looking directly into the camera with serene dignity and deep joy, warm tears of pride in her eyes, wearing white Netela, warm golden backlight, 35mm film portrait, centered framing",
